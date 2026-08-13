@@ -48,7 +48,7 @@ calculate.efibi<-function(Data,models,key,seed=1){
                               TRUE~native/(native+non_native)))->Data.richness
   
   ############################################################################
-  # Calculate maximum species richness at each site in Data ----------------
+  # Calculate maximum species richness for each sample in Data ---------------
   ############################################################################
   #maximum species richness for each submetric are estimated as the 95th quantile of the predictive posterior distribution of the associated model
   message("Estimating maximum richness")
@@ -94,7 +94,7 @@ calculate.efibi<-function(Data,models,key,seed=1){
              pelagic_pool_score+
              intolerant_score+
              prop_native_score)%>%
-    dplyr::select(-m.n,-m.br,-m.bp,-m.pp,-m.i,-elevation,-distance)->result
+    dplyr::select(-m.n,-m.br,-m.bp,-m.pp,-m.i)->result
   
   return(result)
 }
