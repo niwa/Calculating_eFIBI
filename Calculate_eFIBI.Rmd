@@ -1,0 +1,262 @@
+---
+title: "How to calculate the eFIBI using eDNA data"
+output:
+  html_document:
+    number_sections: true
+bibliography: Data/references.bib
+---
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:5px;">
+
+<div>
+
+<p style="margin-top:0px;">
+<strong>Richard White</strong><br>
+Quantitative Freshwater Ecologist<br>
+`r format(Sys.time(), '%d %B %Y')`
+</p>
+
+</div>
+
+<div>
+<img src="./Data/logo.jpg" width="180"/>
+</div>
+
+</div>
+
+This document contains instructions to calculate the Fish Index of Biotic Integrity developed for use with eDNA data (the eFIBI) by @white2026. R code required to calculate eFIBI is presented in grey boxes, with output shown in white boxes. Alternatively, the full R-code for this tutorial is present in the RMarkdown file (Calculate_eFIBI.Rmd) in this repository, which can be run in R. To follow these instructions you will need the files within the "Functions" "Models" and "Data" folders that accompany this document.
+
+# Load required packages
+
+Calculating eFIBI with this script requires certain packages to be installed and loaded into the working environment.
+
+```{r, echo=T,message=FALSE,warning=FALSE}
+library(tidyverse)#Used for wrangling dataframes
+library(brms)#Used to generate predictions of maximum species richness as a function of distance and elevation of the eDNA sample
+library(here)#for detecting working directory
+```
+
+```{r,echo=F}
+options(tibble.width=Inf)
+```
+
+# Load and inspect data
+
+To calculate eFIBI with this script it is assumed you have your eDNA data prepared in a very specific format, an example of which is provided below: 
+
+```{r, include=T,echo=T}
+#load an example dataset
+load(paste0(here(),"/Data/example.dataframe.RData"))
+```
+
+This loads an object called `edna.dat` which contains lists of fishes detected within each sample. For example, seven fishes were detected in the sample collected at `site.id` `1100306.77013553_4920207.01803971`, on date `2023-06-24`. Five were resolved to the `species` level and two were resolved to `genus` level. A sample consists of a composite of 6 eDNA sub-samples collected following methods described by @melchior2023. A fish taxon is considered detected in a sample if at least five reads belonging to that taxon is detected in at least two of the sub-samples.
+
+```{r,include=T,echo=T}
+edna.dat%>%
+  filter(site.id=="1100306.77013553_4920207.01803971",
+         date=="2023-06-24")
+```
+
+The data must contain the following columns with names and formats specified as shown:
+
+* **site.id**: a unique character string designating the site name where the sample was taken. Can be any character string as long as it is unique to the site.
+* **date**: the date on which the sample was taken.
+* **elevation**: the elevation (meters above sea level) of the site.
+* **distance**: the river-run distance from the site to the coast (km). Calculated from the midpoint of the nearest nzsegment on the Digital River Network v2.4.
+* **species_code**: a 6-letter unique character code of the fish detected. This is a concatenation of the first 3 letters of the genus and species names shown in the scientific.name column. For example, `Anguilla dieffenbachii` is a concatenation of *ang* and *die*. One exception to this rule is for `Galaxias macronasus` which is coded as `galmar`, as it would otherwise share the same code used for `Galaxias maculatus` (i.e., `galmac`). If the fish has only been identified to the genus level, then the first 6 letters of the genus name is used. For example, `Galaxias` becomes `galaxi`.
+* **scientific.name**: scientific name of the fish detected in the sample. Not necessary to calculate eFIBI, but provided here to give context.
+* **rank**: the taxonomic resolution of `species_code`. Must be either `species`, `genus` or `NA`, if no fish were detected in a sample. Note, genus-level entries are eDNA detections that could not be resolved to a species. It is therefore possible to have an entry for an unresolved `genus`, and an additional entry for a `species` of that `genus` within the same sample.
+* **genus**: the genus name of the detected fish.
+
+Samples where no fish taxa were detected are retained in the dataset and encoded using `species_code == "nospec"`.
+
+```{r,include=T,echo=T}
+head(edna.dat%>%filter(species_code=="nospec"))
+```
+
+Each species_code must be unique within each sample, which is the case with these data:
+
+```{r}
+edna.dat%>%
+  group_by(site.id,date)%>%
+  mutate(duplicated.taxon=duplicated(species_code))%>%
+  filter(duplicated.taxon==TRUE)
+```
+
+# Load and inspect eFIBI sub-metric taxonomic key
+
+An eFIBI score of a sample is the summation of six sub-metrics:  
+
+1. total native richness 
+2. native richness of riffle-dwelling species
+3. native richness of benthic pool species
+4. native richness of pelagic pool species
+5. richness of native intolerant species
+6. proportion of species at a site that are native
+
+To compute richness within each sub-metric we need a key to identify which sub-metric each fish taxon belongs to. The key loaded and displayed below shows how each `species_code` in the data contribute to richness of each sub-metric:
+
+```{r,include=T,echo=T}
+load(paste0(here(),"/Data/submetric_species.RData"))
+
+head(submetric_species)
+```
+
+# Load and inspect maximum species richness models
+
+The score for each eFIBI sub-metric is calculated by comparing the richness observed in the sample to the *maximum richness* predicted if anthropogenic impacts on the river were minimal. Predictions of *maximum richness* within each sample are made using the models loaded below:
+
+```{r,include=T,echo=T}
+load(paste0(here(),"/Models/richness.models.RData"))
+```
+The loaded object, `richness.models`, is a `list()` containing five Bayesian Generalised Linear Models (BGLMs). These BGLMs predict richness for the first five sub-metrics as a function of `distance` and `elevation` of the sample site. For example, the model to predict expected richness of the native species sub-metric is:
+
+```{r,include=T,echo=T}
+richness.models$Native
+```
+
+# Calculate eFIBI for sample data
+
+A function is provided that uses the sample data, maximum richness models, and sub-metric key, to calculate eFIBI for each sample. The function is provided as a separate R script in `./Functions/calculate.efibi.R`, as well in Appendix 1. To load the script into R:
+
+```{r,include=T,echo=T,message=FALSE}
+source(paste0(here(),"./Functions/calculate.efibi.R"))
+```
+
+To use the function, simply provide it with your sample data,`edna.dat`, the `richness.models` and submetric key `submetric_species`:
+
+```{r,include=T,echo=T}
+results<-calculate.efibi(Data=edna.dat,models=richness.models,key=submetric_species)
+```
+
+The `results` contains, for each sample:
+
+* The observed richness of taxa belonging to each sub-metric (`native`, `benthic_riffle`, `benthic_pool`, `pelagic_pool`, `intolerant`, `non-native`), and the proportion of taxa that were native (`p.native`)
+* Scores for each sub-metric (`xxxx_score`)
+* The final `eFIBI` score, which is a summation of the sub-metric scores.
+
+```{r,include=T,echo=T}
+head(results)
+```
+
+Plot results:
+
+```{r,include=T,echo=T,message=FALSE}
+results%>%
+  ggplot(aes(x=eFIBI))+
+  geom_histogram()+
+  labs(
+    title = "Distribution of eFIBI scores",
+    x = "eFIBI",
+    y = "Number of samples"
+  )
+```
+
+# Appendix 1: eFIBI calculation function {.unnumbered}
+
+The full function used to calculate eFIBI is reproduced below.
+
+```{r,appendix-function, echo=TRUE}
+calculate.efibi<-function(Data,models,key,seed=1){
+###########################################################################
+# Check for duplicated taxa within any sample --------------------------
+###########################################################################
+  Data %>%
+    dplyr::count(site.id, date, species_code) %>%
+    dplyr::filter(n > 1)->duplicates
+  
+  if (nrow(duplicates) > 0) {
+    stop(
+      "Duplicated taxa detected within some samples. Please ensure species codes are unique within each sample.",
+      call. = FALSE
+    )
+  }
+  
+###########################################################################
+# Calculate observed richness within each sub-metric-----------------------
+###########################################################################
+  message("Calculating observed sub-metric richness")
+  Data%>%
+    group_by(site.id,date,genus)%>%
+    mutate(
+      has_species = any(rank == "species")
+    )%>%
+    ungroup()%>%
+    #Fish are counted towards richness if identified to species level, or, when identified only to genus level, if they are the only detection of that genus in the sample.
+    mutate(counted = case_when(
+      rank == "genus" & !has_species ~ 1,
+      rank == "species" ~ 1,
+      TRUE ~ 0
+    ))%>%
+    #assign a sub-metric to each fish taxon
+    left_join(key, by= "species_code")%>%#
+    #taxa not present in the key do not belong to any sub-metric 
+    mutate(across(
+      c(native, benthic_riffle, benthic_pool,
+        pelagic_pool, intolerant, non_native),
+      ~tidyr::replace_na(.x, 0)
+    ))%>%
+    #calculate the number of taxa within each sub-metric for each sample
+    group_by(site.id,date,elevation,distance)%>%
+    summarise(across(
+      all_of(c("native","benthic_riffle","benthic_pool","pelagic_pool","intolerant","non_native")),
+      ~ sum(.x[counted == 1], na.rm = TRUE)
+    ),.groups = "drop_last")%>%
+    ungroup()%>%
+    mutate(p.native=case_when(native+non_native==0~0,
+                              TRUE~native/(native+non_native)))->Data.richness
+  
+############################################################################
+# Calculate maximum species richness at each site in Data ----------------
+############################################################################
+  #maximum species richness for each submetric are estimated as the 95th quantile of the predictive posterior distribution of the associated model
+  message("Estimating maximum richness")
+  set.seed(seed)
+  Data.richness$m.n=predict(models$Native,newdata=Data.richness,probs=0.95,robust=TRUE,
+                   ndraws=1200)[,"Q95"]
+  Data.richness$m.br=predict(models$Benthic_riffle,newdata=Data.richness,probs=0.95,robust=TRUE,
+               ndraws=1200)[,"Q95"]
+  Data.richness$m.bp=predict(models$Benthic_pool,newdata=Data.richness,probs=0.95,robust=TRUE,
+               ndraws=1200)[,"Q95"]
+  Data.richness$m.pp=predict(models$Pelagic_pool,newdata=Data.richness,probs=0.95,robust=TRUE,
+               ndraws=1200)[,"Q95"]
+  Data.richness$m.i=predict(models$Intolerant,newdata=Data.richness,probs=0.95,robust=TRUE,
+              ndraws=1200)[,"Q95"]
+###########################################################################
+# Calculate eFIBI ---------------------------------------------------------
+###########################################################################
+  message("Calculating eFIBI")
+Data.richness%>%
+    #calculate sub-metric scores
+  mutate(native_score=case_when(native>(m.n*2/3)~5*2,
+                                 native>=(m.n*1/3)~3*2,
+                                 native<(m.n*1/3)~1*2),
+         benthic_riffle_score=case_when(benthic_riffle>(m.br*2/3)~5*2,
+                                        benthic_riffle>=(m.br*1/3)~3*2,
+                                        benthic_riffle<(m.br*1/3)~1*2),
+         benthic_pool_score=case_when(benthic_pool>(m.bp*2/3)~5*2,
+                                      benthic_pool>=(m.bp*1/3)~3*2,
+                                      benthic_pool<(m.bp*1/3)~1*2),
+         pelagic_pool_score=case_when(pelagic_pool>(m.pp*2/3)~5*2,
+                                      pelagic_pool>=(m.pp*1/3)~3*2,
+                                      pelagic_pool<(m.pp*1/3)~1*2),
+         intolerant_score=case_when(intolerant>(m.i*2/3)~5*2,
+                                     intolerant>=(m.i*1/3)~3*2,
+                                     intolerant<(m.i*1/3)~1*2),
+         prop_native_score=case_when(p.native>2/3~5*2,
+                                 p.native>=1/3~3*2,
+                                 p.native<1/3~1*2),
+         #calculate eFIBI as the sum of submetric scores
+         eFIBI=native_score+
+           benthic_riffle_score+
+           benthic_pool_score+
+           pelagic_pool_score+
+           intolerant_score+
+           prop_native_score)%>%
+    dplyr::select(-m.n,-m.br,-m.bp,-m.pp,-m.i,-elevation,-distance)->result
+  
+  return(result)
+}
+```
+
+# References
