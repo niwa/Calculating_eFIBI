@@ -123,10 +123,10 @@ A function is provided that uses the sample data, maximum richness models, and s
 source(paste0(here(),"./Functions/calculate.efibi.R"))
 ```
 
-To use the function, simply provide it with your sample data,`edna.dat`, the `richness.models` and submetric key `submetric_species`:
+To use the function, simply provide it with your sample data,`edna.dat`, the `richness.models` and the submetric key `submetric_species`. Setting the seed is optional (default seed=1) but necessary to ensure reproducibility given that maximum species richness estimates are drawn from the model posterior predictive distribution, and can therefore vary slightly each time the function is run.
 
 ```{r,include=T,echo=T}
-results<-calculate.efibi(Data=edna.dat,models=richness.models,key=submetric_species)
+results<-calculate.efibi(Data=edna.dat,models=richness.models,key=submetric_species,seed=1)
 ```
 
 The `results` contains, for each sample:

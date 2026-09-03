@@ -380,7 +380,7 @@ data</h1>
 <div>
 <p style="margin-top:0px;">
 <strong>Richard White</strong><br> Quantitative Freshwater Ecologist<br>
-13 August 2026
+03 September 2026
 </p>
 </div>
 <div>
@@ -595,9 +595,13 @@ function is provided as a separate R script in
 load the script into R:</p>
 <pre class="r"><code>source(paste0(here(),&quot;./Functions/calculate.efibi.R&quot;))</code></pre>
 <p>To use the function, simply provide it with your sample
-data,<code>edna.dat</code>, the <code>richness.models</code> and
-submetric key <code>submetric_species</code>:</p>
-<pre class="r"><code>results&lt;-calculate.efibi(Data=edna.dat,models=richness.models,key=submetric_species)</code></pre>
+data,<code>edna.dat</code>, the <code>richness.models</code> and the
+submetric key <code>submetric_species</code>. Setting the seed is
+optional (default seed=1) but necessary to ensure reproducibility given
+that maximum species richness estimates are drawn from the model
+posterior predictive distribution, and can therefore vary slightly each
+time the function is run.</p>
+<pre class="r"><code>results&lt;-calculate.efibi(Data=edna.dat,models=richness.models,key=submetric_species,seed=1)</code></pre>
 <pre><code>## Calculating observed sub-metric richness</code></pre>
 <pre><code>## Estimating maximum richness</code></pre>
 <pre><code>## Calculating eFIBI</code></pre>
